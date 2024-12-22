@@ -7,12 +7,12 @@ from datetime import datetime, timedelta
 import urllib.parse
 
 def get_first_index_date(domain):
-    url = f"http://archive.org/wayback/available?url={domain}"
+    url = f"http://web.archive.org/cdx/search/cdx?url={domain}&output=json&fl=timestamp&collapse=digest&limit=1&filter=statuscode:200"
     response = requests.get(url)
     data = response.json()
     
-    if 'archived_snapshots' in data and 'closest' in data['archived_snapshots']:
-        first_snapshot = data['archived_snapshots']['closest']['timestamp']
+    if len(data) > 1 and len(data[1]) > 0:
+        first_snapshot = data[1][0]
         first_date = datetime.strptime(first_snapshot, '%Y%m%d%H%M%S')
         return first_date
     return None
