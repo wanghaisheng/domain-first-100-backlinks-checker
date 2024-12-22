@@ -1,0 +1,39 @@
+name: Domain Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: 'The domain to analyze'
+        required: true
+        default: 'example.com'
+
+jobs:
+  analyze-domain:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 tldextract
+
+      - name: Run domain analysis script
+        id: domain_analysis
+        run: |
+          python main.py ${{ github.event.inputs.domain }}
+
+      - name: Commit results
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add results.txt
+          git commit -m 'Add domain analysis results'
+          git push
