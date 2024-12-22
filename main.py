@@ -43,6 +43,8 @@ def main(domain):
     first_index_date = get_first_index_date(domain)
     if not first_index_date:
         print(f"No index date found for {domain}")
+        with open('results.txt', 'w') as f:
+            f.write("No index date found for the domain.")
         return
     
     end_date = first_index_date + timedelta(days=30)
