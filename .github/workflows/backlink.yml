@@ -1,40 +1,60 @@
-
-name: update backlink
+name: domain backlink checker
 
 on:
-  workflow_dispatch:  # Trigger manually
-  # schedule:
-    # - cron: "0 */12 * * *"
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'oldest or newest '
+        type: string
+        required: False
+        default: 'oldest'
+      count:
+        description: 'count limit'
+        type: string
+        required: False
+        default: '100'        
+      urls:
+        description: 'domain urls list, use comma as separator'
+        type: string
+        required: False
+        default: "heytcm.com,tiktokrefugee.cc"
+      action:
+        description: 'Choose action: "commit" to commit to repo, "upload" to upload to release'
+        type: string
+        required: False
+        default: 'upload'  # Default action is commit
 
 jobs:
-  scrape-app-store:
+  scrape_and_email:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Check out this repo
+        uses: actions/checkout@v2
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v2
         with:
-          python-version: '3.9'  # Ensure your required version is used
+          python-version: '3.9'
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install httpx google-play-scraper aiohttp aiohttp_socks bs4 DataRecorder pandas DrissionPage python-dotenv app_store_scraper requests tqdm waybackpy cdx_toolkit lxml
-      - name: Run scraper and save results
+      - name: Install all necessary packages
+        run: pip install httpx google-play-scraper aiohttp aiohttp_socks DataRecorder pandas DrissionPage python-dotenv app_store_scraper requests tqdm
+
+        
+      - name: Run the scraping script
+        run: python domainMonitor.py
         env:
+          type: ${{ github.event.inputs.type }}          
+          count: ${{ github.event.inputs.count }}          
+          urls: ${{ github.event.inputs.urls }}          
+
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.D1_APP_DATABASE_ID }}    
           RESULT_FOLDER: ./result  # Adjust if necessary
           OUTPUT_FOLDER: ./output
-          
-        run: |
-          python domainMonitor.py
+
       - name: upload files          
         uses: actions/upload-artifact@v4
         with:
-            name: healthapps
+            name: healthapps-${{ env.keyword }}
             path: ./result/ # or path/to/artifact
