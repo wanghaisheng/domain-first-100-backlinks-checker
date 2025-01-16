@@ -148,44 +148,22 @@ async def is_table_populated(session):
 
 
 # Helper: Insert or update app data with retry and exception handling
-async def get_app_date(session, item, max_retries=3, retry_delay=5):
+async def get_domain_born_date(session, url, max_retries=3, retry_delay=5):
     current_time = datetime.utcnow().isoformat()
-    url=item.get('url')
     print('Try to find first index date of', url)
     user_agent = "check huggingface app's user agent"
     wayback_createAt = None
     cc_createAt = None    
 
-    # try:
-        # cdx_api = WaybackMachineCDXServerAPI(url, user_agent)
-        # oldest = cdx_api.oldest()
-        # if oldest.datetime_timestamp:
-            # wayback_createAt = oldest.datetime_timestamp.isoformat()
-        # print('==WaybackMachineCDXServerAPI=', wayback_createAt)
-    # except Exception as e:
-        # print('WaybackMachineCDXServerAPI failed:', e)
-
-    current_date = datetime.now()
-    start_date = current_date - timedelta(days=365)
-    start_date = int(start_date.strftime('%Y%m%d'))
-    current_date = int(current_date.strftime('%Y%m%d'))
-    wayback_createAt=exact_url_timestamp(url)
-    # for t in ['cc','ia']:
-        # if ccisopen==False and t=='cc':
-            # continue
-        # try:
-            # cdx = cdx_toolkit.CDXFetcher(source=t)
-            # for obj in cdx.iter(url, from_ts=start_date, to=current_date,limit=1, cc_sort='ascending'):
-                # if t=='cc':
-                
-                    # cc_createAt = obj.get('timestamp')
-                # if t=='ia':
-                    # wayback_createAt = obj.get('timestamp')
-                
-        # except Exception as e:
-            # print('t failed:', e)
-    item['wayback_createAt']=wayback_createAt
-    item['cc_createAt']=cc_createAt
+    try:
+        cdx_api = WaybackMachineCDXServerAPI(url, user_agent)
+        oldest = cdx_api.oldest()
+        if oldest.datetime_timestamp:
+            wayback_createAt = oldest.datetime_timestamp.isoformat()
+        print('==WaybackMachineCDXServerAPI=', wayback_createAt)
+    except Exception as e:
+        print('WaybackMachineCDXServerAPI failed:', e)
+    return wayback_createAt
 async def upsert_app_data(session, item, max_retries=3, retry_delay=5):
     current_time = datetime.utcnow().isoformat()
 
@@ -315,95 +293,35 @@ async def main():
     timeout = ClientTimeout(total=60)
     supportwayback=True
     supportgooglesearch=True
-    baseUrl='https://apps.apple.com'
-    
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        print("[INFO] Starting sitemap parsing...")
-        await create_table_if_not_exists(session)
-        is_populated = await is_table_populated(session)
-        
-        if  supportwayback==True:
-            print('Using Wayback Machine as initial')
-            current_date = datetime.now()
-            start_date = current_date - timedelta(days=730)
-            file_path = 'hg.txt'
-            items=exact_url_timestamp(
-                baseUrl,
-                max_count=1,
-                start_date=None,
-                end_date=None,
-                
-                chunk_size=1000,
-                sleep=5
-            )
-            # if os.path.exists(file_path):
-                # with open(file_path, encoding='utf8') as f:
-                    # urls = [line.strip() for line in f]
-            print('items',len(items))
-            print("[INFO] wayback check parsing complete.")
-            unique_items = {}
-
-            if len(items)<1:
-                return 
-            cleanitems=[]
-            print('start clean urls',)
-            uniqueurls=[]
-            for item in items:
-                url=item.get('url')
-                wayback_createAt=item.get('timestamp')
-                print('--',url)
-                if '?' in url:
-                    url=url.split('?')[0]
-                appname=url.replace(baseUrl,'').split('/')
-                if len(appname)<2:
-                    print('invalid url',url)
-                    continue
-
-                url=baseUrl+appname[0]+'/'+appname[1]
-                if url in unique_items:
-                    print('app url added before',url)
-                
-                    existing_item = unique_items[url]
-                    
-                    existing_wayback_createAt = existing_item.get('wayback_createAt')
-                    if wayback_createAt < existing_wayback_createAt:
-                        existing_item['wayback_createAt'] = wayback_createAt
-                        print('new app url date is older',wayback_createAt)
-
-                else:
-                    print('add new app url ',url)
-                    
-                    item['url'] = url
-                    item['wayback_createAt'] = wayback_createAt
-                    unique_items[url] = item
-            cleanitems = list(unique_items.values())
-
-            print('cleanitems',len(cleanitems))
-            await asyncio.gather(*(process_url(semaphore, session, item) for item in cleanitems))
+    domainlist=os.getenv('url','')
+    if domainlist=='':
+        return 
+    if ',' in domainlist:
+        domainlist=domainlist.split(',')
+    else:
+        domainlist=[domainlist]
+    domainlist=['https://toolify.ai']
+    for url in domainlist:
+        url=url.strip()
         appurls=[]
-        existing_apps=await get_existing_app_data()
-        print('existing apps count',len(existing_apps))
-        
-        if existing_apps!=[]:
-            appurls=[  item.get('url')   for item in existing_apps]            
-        if supportgooglesearch:
-            url_domain = 'https://apps.apple.com'
-            ROOT_SITEMAP_URL = f"{url_domain}/sitemap.xml"
-            new_apps = await parse_sitemap(session, ROOT_SITEMAP_URL)
-            print("[INFO] Sitemap parsing complete.")
-          #  filter loc with lastmodify in last 24 hours
-            # urls = list(set(urls))
-            # if url not in table, set sitemap_createAt =lastmodify
+        borndate=get_domain_born_date(url)    
         if supportgooglesearch:
             d=DomainMonitor()
             search_urls=[]
-            expression=os.getenv('expression','')
+            expression=os.getenv('expression',f'link:{url}')
+            if 'https://' in url:
+                url=url.replace('https://','')
+            if 'www.' in url:
+                url=url.replace('www.','')
             sites=[
-      'apps.apple.com']
+      url,
+    'www.'+url
+            ]
             d.sites=sites
+            time_ranges=[]
 
             advanced_queries = {        
-                    'apps.apple.com': f'{expression} site:apps.apple.com',
+                    'apps.apple.com': f'{expression} -site:{url}',
                     # 'play.google.com': f'{expression} site:play.google.com'
                 
                                    }
