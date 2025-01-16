@@ -313,8 +313,7 @@ async def process_new_app(semaphore, session, item):
 async def main():
     semaphore = asyncio.Semaphore(SEM_LIMIT)
     timeout = ClientTimeout(total=60)
-    supportwayback=False
-    supportsitemap=False
+    supportwayback=True
     supportgooglesearch=True
     baseUrl='https://apps.apple.com'
     
@@ -323,16 +322,16 @@ async def main():
         await create_table_if_not_exists(session)
         is_populated = await is_table_populated(session)
         
-        if is_populated==False and supportwayback==True:
+        if  supportwayback==True:
             print('Using Wayback Machine as initial')
             current_date = datetime.now()
             start_date = current_date - timedelta(days=730)
             file_path = 'hg.txt'
             items=exact_url_timestamp(
                 baseUrl,
-                max_count=5000,
-                start_date=int(start_date.strftime('%Y%m%d')),
-                end_date=int(current_date.strftime('%Y%m%d')),
+                max_count=1,
+                start_date=None,
+                end_date=None,
                 
                 chunk_size=1000,
                 sleep=5
@@ -387,7 +386,7 @@ async def main():
         
         if existing_apps!=[]:
             appurls=[  item.get('url')   for item in existing_apps]            
-        if supportsitemap:
+        if supportgooglesearch:
             url_domain = 'https://apps.apple.com'
             ROOT_SITEMAP_URL = f"{url_domain}/sitemap.xml"
             new_apps = await parse_sitemap(session, ROOT_SITEMAP_URL)
