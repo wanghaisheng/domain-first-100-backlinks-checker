@@ -1,4 +1,6 @@
 import requests
+from getbrowser import setup_chrome
+
 from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime, timedelta
@@ -10,6 +12,7 @@ from urllib.parse import quote, urlparse, parse_qs
 import random
 import logging
 
+browser = setup_chrome()
 
 class DomainMonitor:
     def __init__(self, sites_file="game_sites.txt"):
@@ -65,8 +68,14 @@ class DomainMonitor:
             tbs = 'qdr:d'  # 最近24小时
         elif time_range == '1w':
             tbs = 'qdr:w'  # 最近1周
-        else:
-            raise ValueError("Invalid time range")
+        elif time_range=='1m':
+            tbs='qdr:m'
+        elif  time_range=='1y':
+            tbs='qdr:y'
+            
+        elif  time_range=='all':
+            print("default is all results")
+            pass
         
         query = f'site:{site}'
         params = {
@@ -92,8 +101,14 @@ class DomainMonitor:
             tbs = 'qdr:d'  # 最近24小时
         elif time_range == '1w':
             tbs = 'qdr:w'  # 最近1周
-        else:
-            raise ValueError("Invalid time range")
+        elif time_range=='1m':
+            tbs='qdr:m'
+        elif  time_range=='1y':
+            tbs='qdr:y'
+            
+        elif  time_range=='all':
+            print("default is all results")
+            pass
 
         params = {
             'q': query,
@@ -169,39 +184,66 @@ class DomainMonitor:
         :param max_pages: 最大页数
         :param advanced_query: advanced search query to use with the build_google_advanced_search_url if set, or else uses the default
         :return: 搜索结果列表
+        
+        Monitor a site for search results over multiple pages.
+        :param site: The domain of the site to monitor.
+        :param time_range: The time range to filter the search results.
+        :param max_pages: The maximum number of pages to fetch.
+        :param advanced_query: Optional advanced search query.
+        :return: A list of search results.
         """
         all_results = []
+        total_pages = max_pages  # Default to max_pages if result count cannot be determined
+
         for page in range(max_pages):
-            start = page * 100 #google default 100 results per page
+            start = page * 100  # Google default 100 results per page
             if advanced_query:
                 search_url = self.build_google_advanced_search_url(advanced_query, time_range, start)
-
+                self.logger.info(f"Monitoring advance url {search_url} for {time_range}, page {page+1}")
+                
             else:
-                 search_url = self.build_google_search_url(site, time_range, start)
+                search_url = self.build_google_search_url(site, time_range, start)
+                self.logger.info(f"Monitoring nomal url {search_url} for {time_range}, page {page+1}")
 
-            self.logger.info(f"Monitoring {site} for {time_range}, page {page+1}")
+            self.logger.info(f"Monitoring {site} for {time_range}, page {page + 1}")
 
             try:
-                response = requests.get(search_url, headers=self.headers)
-                response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-                results = self.extract_search_results(response.text)
-                if not results:  # If no results are found for a page, assume there are no more pages
-                    self.logger.info(f"No more results found for {site} on page {page+1}")
-                    break
+                tab=browser.new_tab()
                 
-                all_results.extend(results)
-                self.logger.info(f"Found {len(results)} results for {site} on page {page+1}")
+                tab.get(search_url)              
+                html=tab.html
+                if page == 0:  # Extract total result count only on the first page
+                    soup = BeautifulSoup(html, 'html.parser')
+                    result_stats = soup.select_one('#result-stats')
+                    print('result_stats=',result_stats)
+                    if result_stats:
+                        match = re.search(r'About ([\d,]+) results', result_stats.text)
+                        if match:
+                            total_results = int(match.group(1).replace(',', ''))
+                            total_pages = min(max_pages, (total_results // 100) + 1)
+                            self.logger.info(f"Total results: {total_results}, Total pages: {total_pages}")
 
-                # 随机延时，避免请求过快
+                results = self.extract_search_results(html)
+                if not results:  # If no results are found for a page, assume there are no more pages
+                    self.logger.info(f"No more results found for {site} on page {page + 1}")
+                    break
+
+                all_results.extend(results)
+                self.logger.info(f"Found {len(results)} results for {site} on page {page + 1}")
+
+                # Random delay to avoid requests being too fast
                 time.sleep(random.uniform(2, 5))
+
+                if page + 1 >= total_pages:
+                    self.logger.info(f"Reached the last page based on total results for {site}")
+                    break
 
             except requests.exceptions.RequestException as e:
                 self.logger.error(f"Error fetching page {page + 1} for {site}: {str(e)}")
-                break # if a page cannot be fetched then break
+                break  # If a page cannot be fetched, then break
             except Exception as e:
-                 self.logger.error(f"Error processing page {page + 1} for {site}: {str(e)}")
-                 break # if there are any other exceptions when processing the results then break
-                 
+                self.logger.error(f"Error processing page {page + 1} for {site}: {str(e)}")
+                break  # If there are any other exceptions when processing the results, then break
 
         return all_results
     
@@ -213,7 +255,7 @@ class DomainMonitor:
         :return: 包含所有结果的DataFrame
         """
         if time_ranges is None:
-            time_ranges = ['24h', '1w']
+            time_ranges = ['all']
             
         all_results = []
         if len(self.sites)==0:
