@@ -358,6 +358,8 @@ async def main():
     
     for url in domainlist:
         url=url.strip()
+        if '/' in url:
+            url=url.split('/')[0]
         appurls=[]
         borndate=get_domain_born_date(url)    
         if borndate:
