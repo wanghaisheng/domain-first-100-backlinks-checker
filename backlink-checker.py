@@ -159,7 +159,7 @@ async def get_domain_born_date(session, url, max_retries=3, retry_delay=5):
         cdx_api = WaybackMachineCDXServerAPI(url, user_agent)
         oldest = cdx_api.oldest()
         if oldest.datetime_timestamp:
-            wayback_createAt = oldest.datetime_timestamp.isoformat()
+            wayback_createAt = oldest.timestamp
         print('==WaybackMachineCDXServerAPI=', wayback_createAt)
     except Exception as e:
         print('WaybackMachineCDXServerAPI failed:', e)
@@ -286,8 +286,61 @@ async def process_url(semaphore, session, item):
 async def process_new_app(semaphore, session, item):
     async with semaphore:
         await upsert_app_data(session, item)
+from datetime import datetime, timedelta
 
-# Main function
+def create_before_dates(base_date_str,days=30):
+    """
+    Generates 'before:' date strings based on a base date string.
+
+    Args:
+        base_date_str: A string representing the base date. This can be a timestamp
+                       in the format YYYYMMDDHHMMSS.
+
+    Returns:
+        A dictionary containing the constructed 'before:' date strings
+        for 1 week, 1 month, 3 months, 6 months, and 1 year after the base date.
+    """
+    before_dates = {}
+    try:
+        # Convert base_date_str to a datetime object. Assuming format like YYYYMMDDHHMMSS.
+        base_date = datetime.strptime(base_date_str, "%Y%m%d%H%M%S")
+    except ValueError:
+      try:
+        # Convert base_date_str to a datetime object, if it's in the YYYY-MM-DD format
+        base_date = datetime.strptime(base_date_str, "%Y-%m-%d")
+      except ValueError:
+          return "Invalid date format"
+
+    # Calculate dates
+    one_week = base_date + timedelta(days=7)
+    one_month = base_date + timedelta(days=30) # Approximation, use a proper month logic if required
+    three_months = base_date + timedelta(days=90)  # Approximation, use a proper month logic if required
+    six_months = base_date + timedelta(days=180) # Approximation, use a proper month logic if required
+    one_year = base_date + timedelta(days=365)
+
+    # Format dates to 'YYYY-MM-DD'
+    if days==7:
+        
+        before_dates =one_week.strftime("%Y-%m-%d")
+    elif days==30:
+        
+        before_dates = one_month.strftime("%Y-%m-%d")
+    elif days==90:
+
+        before_dates = three_months.strftime("%Y-%m-%d")
+    elif days==180:
+
+        before_dates = six_months.strftime("%Y-%m-%d")
+    elif days==365:
+
+        before_dates = one_year.strftime("%Y-%m-%d")
+    else:
+        before_dates=None
+
+    return before_dates
+
+# Example Usage
+# base_date_str = '19981111184551'
 async def main():
     semaphore = asyncio.Semaphore(SEM_LIMIT)
     timeout = ClientTimeout(total=60)
@@ -301,14 +354,16 @@ async def main():
     else:
         domainlist=[domainlist]
     domainlist=['https://toolify.ai']
+    d=DomainMonitor()
+    
     for url in domainlist:
         url=url.strip()
         appurls=[]
         borndate=get_domain_born_date(url)    
-        if supportgooglesearch:
-            d=DomainMonitor()
+        if borndate:
+            before_dates = create_before_dates(borndate,days=90)
+
             search_urls=[]
-            expression=os.getenv('expression',f'link:{url}')
             if 'https://' in url:
                 url=url.replace('https://','')
             if 'www.' in url:
@@ -319,11 +374,12 @@ async def main():
             ]
             d.sites=sites
             time_ranges=[]
-
+            expression=os.getenv('expression',f'link:{url}')
+            expression= f'{expression} -site:{url}'
+            if before_dates:
+                expression=f"{expression} before:{before_dates}"
             advanced_queries = {        
-                    'apps.apple.com': f'{expression} -site:{url}',
-                    # 'play.google.com': f'{expression} site:play.google.com'
-                
+                    url: expression
                                    }
 
             results=d.monitor_all_sites(advanced_queries=advanced_queries)
@@ -360,10 +416,10 @@ async def main():
             print('clean google search url item',len(new_apps_urls),new_apps_urls)
             
             
-            await asyncio.gather(*(process_new_app(semaphore, session, item) for item in new_items))
+            # await asyncio.gather(*(process_new_app(semaphore, session, item) for item in new_items))
         print("[INFO] url detect complete.")
         print("[INFO] update popular space count.")
-        bulk_scrape_and_save_app_urls(new_apps_urls)
+        # bulk_scrape_and_save_app_urls(new_apps_urls)
 
 
 
