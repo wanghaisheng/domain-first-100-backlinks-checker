@@ -108,7 +108,7 @@ class DomainMonitor:
             
         elif  time_range=='all':
             print("default is all results")
-            pass
+            tbs=None
 
         params = {
             'q': query,
@@ -212,6 +212,10 @@ class DomainMonitor:
                 
                 tab.get(search_url)              
                 html=tab.html
+                print('html===',html)
+                if 'Our systems have detected unusual traffic from your computer network' in html:
+                    self.logger.error(f'google risk trigger',html)
+                    break 
                 if page == 0:  # Extract total result count only on the first page
                     soup = BeautifulSoup(html, 'html.parser')
                     result_stats = soup.select_one('#result-stats')
@@ -225,6 +229,7 @@ class DomainMonitor:
 
                 results = self.extract_search_results(html)
                 if not results:  # If no results are found for a page, assume there are no more pages
+
                     self.logger.info(f"No more results found for {site} on page {page + 1}")
                     break
 
